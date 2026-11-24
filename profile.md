@@ -1,4 +1,3 @@
-<img width="1320" height="2868" alt="image" src="https://github.com/user-attachments/assets/d0979426-0c08-44f9-9425-da14d8323d83" /># AI 个人交互档案 (AI Personal Profile)
 
 > **Version**: 2.0 | **Language**: 简体中文 | **Privacy**: 已脱敏（无个人身份与账户敏感信息）
 > **使用说明**：本文件用于跨平台 AI 助手共享长期上下文。请在回答前严格遵循以下背景设定、数据隔离规则与输出规范。
