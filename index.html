@@ -906,7 +906,6 @@
 
   <!-- 主仪表盘内容 -->
   <main class="container main-content">
-
     <!-- 次级控制条：估值模式 + 行内可修改现金 -->
     <div class="sub-bar">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -976,6 +975,49 @@
       </div>
     </section>
 
+    <!-- 持仓明细表（黄金首屏 4 列布局） -->
+    <section class="card table-card">
+      <div class="table-toolbar">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="table-dot" class="dot" style="width:9px;height:9px;background:#f43f5e;"></span>
+          <h2 id="table-title" class="chart-title">A股及场内ETF持仓明细表 (CNY)</h2>
+        </div>
+
+        <div class="table-controls">
+          <div class="search-box">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.2" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="search-input" type="text" placeholder="搜索代码 / 名称 / 备注..." oninput="renderHoldingsTable(computePortfolioMetrics())" class="search-input" />
+          </div>
+
+          <select id="sort-select" onchange="renderHoldingsTable(computePortfolioMetrics())" class="sort-select">
+            <option value="mv_desc">按持仓市值降序</option>
+            <option value="today_pnl_desc">按当日盈亏降序</option>
+            <option value="pnl_desc">按持仓总盈亏降序</option>
+            <option value="pnl_pct_desc">按总收益率降序</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-hint-bar">
+        <span>首屏直显 <strong>名称 · 现价 · 当日盈亏 · 总盈亏</strong>；向右微滑可改 <strong>数量 / 成本</strong>。</span>
+        <button onclick="resetToBuiltInSnapshot()" style="background:none;border:none;color:#60a5fa;text-decoration:underline;font-size:11px;cursor:pointer;">恢复内置底稿</button>
+      </div>
+
+      <div class="table-scroll-wrap">
+        <table>
+          <thead id="holdings-thead">
+            <!-- 动态表头 -->
+          </thead>
+          <tbody id="holdings-tbody">
+            <!-- 动态持仓行 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- 双图表可视化区（纯原生 Canvas 高清渲染） -->
     <section class="charts-grid">
       <!-- 左侧：资产占比环形图 -->
@@ -1040,49 +1082,6 @@
       </div>
       <div class="canvas-wrap" style="height:240px;"><canvas id="netWorthCanvas"></canvas></div>
       <div class="history-meta" id="history-meta">正在建立本地快照...</div>
-    </section>
-
-    <!-- 持仓明细表（黄金首屏 4 列布局） -->
-    <section class="card table-card">
-      <div class="table-toolbar">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span id="table-dot" class="dot" style="width:9px;height:9px;background:#f43f5e;"></span>
-          <h2 id="table-title" class="chart-title">A股及场内ETF持仓明细表 (CNY)</h2>
-        </div>
-
-        <div class="table-controls">
-          <div class="search-box">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.2" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input id="search-input" type="text" placeholder="搜索代码 / 名称 / 备注..." oninput="renderHoldingsTable(computePortfolioMetrics())" class="search-input" />
-          </div>
-
-          <select id="sort-select" onchange="renderHoldingsTable(computePortfolioMetrics())" class="sort-select">
-            <option value="mv_desc">按持仓市值降序</option>
-            <option value="today_pnl_desc">按当日盈亏降序</option>
-            <option value="pnl_desc">按持仓总盈亏降序</option>
-            <option value="pnl_pct_desc">按总收益率降序</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="table-hint-bar">
-        <span>首屏直显 <strong>名称 · 现价 · 当日盈亏 · 总盈亏</strong>；向右微滑可改 <strong>数量 / 成本</strong>。</span>
-        <button onclick="resetToBuiltInSnapshot()" style="background:none;border:none;color:#60a5fa;text-decoration:underline;font-size:11px;cursor:pointer;">恢复内置底稿</button>
-      </div>
-
-      <div class="table-scroll-wrap">
-        <table>
-          <thead id="holdings-thead">
-            <!-- 动态表头 -->
-          </thead>
-          <tbody id="holdings-tbody">
-            <!-- 动态持仓行 -->
-          </tbody>
-        </table>
-      </div>
     </section>
 
     <!-- 底部折叠面板：A股近期做T与定投操作流水 -->
