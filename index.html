@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="资产监控台" />
+  <title>跨市场资产实时监控台 | Global Portfolio Monitor</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- PapaParse for robust CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #070b14;
+      color: #f3f4f6;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #070b14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1f2937;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #374151;
+    }
+    .glass-card {
+      background: linear-gradient(145deg, rgba(17, 24, 39, 0.94), rgba(10, 15, 28, 0.98));
+      border: 1px solid rgba(55, 65, 81, 0.45);
+      box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      70% { transform: scale(2); opacity: 0; }
+      100% { transform: scale(2); opacity: 0; }
+    }
+    .live-dot::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      background-color: currentColor;
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-14 selection:bg-blue-500/30 selection:text-blue-200">
+
+  <!-- Non-blocking Toast Container -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full px-4 sm:px-0 pointer-events-none"></div>
+
+  <!-- Top Navigation & Status Bar -->
+  <header class="sticky top-0 z-30 border-b border-gray-800/80 bg-[#070b14]/92 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <!-- Brand & Status Indicators -->
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">跨市场资产实时监控台</h1>
+              <!-- Google Sheets Sync Status Pill -->
+              <span id="sheet-status-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/25">
+                <span id="sheet-status-dot" class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span id="sheet-status-text">已自动绑定专属网盘链接</span>
+              </span>
+              <!-- Tencent Quote Status Pill -->
+              <span id="quote-status-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-800 text-gray-400 border border-gray-700">
+                <span id="quote-status-dot" class="relative w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                <span id="quote-status-text">行情连接中...</span>
+              </span>
+            </div>
+            <div class="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span>美股 <span id="us-date-label" class="text-gray-300 font-num">2026-11-20</span> · 银河A股 <span id="cn-date-label" class="text-gray-300 font-num">2026-11-27</span></span>
+              <span class="text-gray-600">|</span>
+              <span id="last-refresh-label" class="font-num text-gray-400">同步时间: 初始化中...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- FX Rate Controller -->
+          <div class="flex items-center bg-gray-900/90 border border-gray-700/80 rounded-xl px-2.5 py-1.5 text-xs" title="支持自动获取离岸/在岸实时汇率或手动覆盖">
+            <span class="text-gray-400 mr-1">USD/CNY</span>
+            <input id="fx-rate-input" type="number" step="0.0001" value="7.2500"
+              class="w-16 bg-transparent text-white font-num font-semibold focus:outline-none focus:text-blue-400 text-right" />
+            <span id="fx-source-tag" class="ml-1 text-[10px] text-gray-500">基准</span>
+          </div>
+
+          <!-- Red Up / Green Up Toggle -->
+          <button onclick="toggleColorMode()"
+            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-900/90 hover:bg-gray-800 border border-gray-700/80 text-xs font-medium text-gray-200 transition">
+            <span id="color-mode-dot" class="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span id="color-mode-text">红涨绿跌</span>
+          </button>
+
+          <!-- Auto Polling Toggle (60s) -->
+          <button onclick="toggleAutoRefresh()" id="auto-refresh-btn"
+            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gray-900/90 hover:bg-gray-800 border border-gray-700/80 text-xs font-medium text-gray-300 transition">
+            <span id="auto-refresh-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="auto-refresh-text">60s轮询: 开</span>
+          </button>
+
+          <!-- Manual Sync Refresh Button -->
+          <button onclick="refreshAllData(true)"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 transition">
+            <svg id="refresh-spin-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>立即同步刷新</span>
+          </button>
+
+          <!-- Google Sheets Config Modal Button -->
+          <button onclick="toggleBindModal(true)"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-xs font-semibold text-white shadow-md shadow-blue-600/20 transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <span>网盘链接管理</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-5">
+
+    <!-- Sub-Control Bar: Price Priority & Inline Cash Quick-Edit -->
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-gray-900/60 border border-gray-800/80 rounded-2xl px-4 py-2.5">
+      <!-- Price Priority Mode -->
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs text-gray-400">估值现价模式:</span>
+        <div class="inline-flex p-0.5 rounded-xl bg-gray-950 border border-gray-800">
+          <button onclick="setPriceMode('LIVE')" id="price-mode-LIVE"
+            class="px-3 py-1 rounded-lg text-xs font-semibold transition bg-blue-600 text-white">
+            实时行情优先（推荐）
+          </button>
+          <button onclick="setPriceMode('SHEET')" id="price-mode-SHEET"
+            class="px-3 py-1 rounded-lg text-xs font-semibold transition text-gray-400 hover:text-white">
+            表格快照价
+          </button>
+        </div>
+      </div>
+
+      <!-- Inline Editable Cash Controls -->
+      <div class="flex flex-wrap items-center gap-3 text-xs">
+        <div class="flex items-center gap-1.5 bg-gray-950/90 border border-gray-800 rounded-xl px-2.5 py-1">
+          <span class="text-gray-400">银河A股现金:</span>
+          <button onclick="openCashQuickEdit('CN')" title="点击直接修改银河可用现金并持久化保存"
+            class="font-num font-semibold text-white hover:text-blue-400 hover:underline decoration-dashed underline-offset-4 cursor-pointer">
+            ¥<span id="bar-cn-cash">20,506.09</span> ✎
+          </button>
+        </div>
+        <div class="flex items-center gap-1.5 bg-gray-950/90 border border-gray-800 rounded-xl px-2.5 py-1">
+          <span class="text-gray-400">美股现金:</span>
+          <button onclick="openCashQuickEdit('US')" title="点击直接修改美股账户现金并持久化保存"
+            class="font-num font-semibold text-amber-400 hover:text-blue-400 hover:underline decoration-dashed underline-offset-4 cursor-pointer">
+            <span id="bar-us-cash">-$122.45</span> ✎
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 Core KPI Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- Card 1: Global Total Assets -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-gray-400">总资产折合 (CNY / USD)</span>
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">跨市场净值</span>
+        </div>
+        <div id="kpi-global-asset" class="mt-2.5 text-2xl sm:text-3xl font-bold font-num text-white tracking-tight">
+          ¥188,243.46
+        </div>
+        <div id="kpi-global-asset-usd" class="mt-1.5 text-xs font-num text-gray-400">
+          ≈ $25,964.62 USD
+        </div>
+      </div>
+
+      <!-- Card 2: Global Total Market Value -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-gray-400">总持仓市值</span>
+          <span id="kpi-position-ratio" class="px-2 py-0.5 rounded-md text-[11px] font-num font-semibold bg-emerald-500/10 text-emerald-400">
+            仓位 89.6%
+          </span>
+        </div>
+        <div id="kpi-global-mv" class="mt-2.5 text-2xl sm:text-3xl font-bold font-num text-white tracking-tight">
+          ¥168,625.13
+        </div>
+        <div id="kpi-global-mv-breakdown" class="mt-1.5 text-xs font-num text-gray-400">
+          A股 ¥111,907.90 | 美股 $7,823.06
+        </div>
+      </div>
+
+      <!-- Card 3: Cumulative Unrealized P&L & Yield -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-gray-400">累计浮动盈亏与收益率</span>
+          <span id="kpi-cum-pnl-pct" class="px-2 py-0.5 rounded-md text-[11px] font-num font-semibold">
+            -6.41%
+          </span>
+        </div>
+        <div id="kpi-cum-pnl" class="mt-2.5 text-2xl sm:text-3xl font-bold font-num tracking-tight">
+          -¥11,542.68
+        </div>
+        <div class="mt-1.5 flex items-center justify-between text-xs font-num">
+          <span class="text-gray-400">当日估算盈亏:</span>
+          <span id="kpi-today-pnl" class="font-semibold text-gray-300">+¥0.00</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Market Assets & Cash Distribution -->
+      <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-gray-400">分市场资产与现金分布</span>
+          <span class="text-[10px] text-gray-400 bg-gray-800 px-2 py-0.5 rounded-md">点击现金可改</span>
+        </div>
+        <div class="mt-2.5 space-y-2 text-xs font-num">
+          <div class="flex items-center justify-between">
+            <span class="text-gray-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-rose-500"></span>A股净值
+            </span>
+            <div class="text-right">
+              <span id="kpi-cn-net" class="text-white font-semibold">¥132,413.99</span>
+              <span id="kpi-cn-pnl" class="ml-1 text-[11px]">(-¥724.60)</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-gray-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-blue-500"></span>美股净值
+            </span>
+            <div class="text-right">
+              <span id="kpi-us-net" class="text-white font-semibold">$7,700.61</span>
+              <span id="kpi-us-pnl" class="ml-1 text-[11px]">(-$1,492.15)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dual Charts Section -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <!-- Left: Cross-Market Asset Allocation Doughnut Chart -->
+      <div class="glass-card rounded-2xl p-5 lg:col-span-5 flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-white">跨市场资产配置环形图</h2>
+            <p class="text-[11px] text-gray-400 mt-0.5">支持按中美市场、资产类别或单标维度透视</p>
+          </div>
+          <div class="inline-flex p-0.5 rounded-lg bg-gray-950 border border-gray-800 text-[11px]">
+            <button onclick="setDoughnutDimension('MARKET')" id="dim-btn-MARKET"
+              class="px-2 py-1 rounded-md font-medium transition bg-blue-600 text-white">
+              美股vsA股vs现金
+            </button>
+            <button onclick="setDoughnutDimension('HOLDING')" id="dim-btn-HOLDING"
+              class="px-2 py-1 rounded-md font-medium transition text-gray-400 hover:text-white">
+              单标的占比
+            </button>
+            <button onclick="setDoughnutDimension('CATEGORY')" id="dim-btn-CATEGORY"
+              class="px-2 py-1 rounded-md font-medium transition text-gray-400 hover:text-white">
+              按类别
+            </button>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-[255px] flex items-center justify-center">
+          <canvas id="allocationChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Right: Individual Holdings P&L Horizontal Comparison Bar Chart -->
+      <div class="glass-card rounded-2xl p-5 lg:col-span-7 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-white">各标的浮动盈亏横向对比柱状图 (折合 CNY)</h2>
+            <p class="text-[11px] text-gray-400 mt-0.5">直观对比红利ETF盈利贡献与科技/个股阶段浮亏</p>
+          </div>
+          <span class="text-[11px] font-num text-gray-400 bg-gray-900 px-2.5 py-1 rounded-lg border border-gray-800">
+            共 <span id="holdings-count-badge" class="text-white font-semibold">14</span> 只标的
+          </span>
+        </div>
+        <div class="relative flex-1 min-h-[265px]">
+          <canvas id="pnlContributionChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Holdings Interactive Table -->
+    <section class="glass-card rounded-2xl overflow-hidden">
+      <!-- Tabs & Search/Sort Toolbar -->
+      <div class="p-4 sm:p-5 border-b border-gray-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <!-- Market Tabs -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+          <button onclick="setMarketTab('ALL')" id="mkt-tab-ALL"
+            class="px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-blue-600 text-white">
+            全部资产 (14)
+          </button>
+          <button onclick="setMarketTab('US')" id="mkt-tab-US"
+            class="px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-gray-800/80 text-gray-300 hover:bg-gray-800">
+            美股账户 (8)
+          </button>
+          <button onclick="setMarketTab('CN')" id="mkt-tab-CN"
+            class="px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-gray-800/80 text-gray-300 hover:bg-gray-800">
+            A股账户 (6)
+          </button>
+        </div>
+
+        <!-- Search & Sort Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="relative flex-1 sm:flex-initial">
+            <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input id="search-input" type="text" placeholder="搜索代码 / 名称 / 备注..." oninput="renderHoldingsTable(computePortfolioMetrics())"
+              class="w-full sm:w-48 pl-9 pr-3 py-1.5 bg-gray-900 border border-gray-700/80 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+          </div>
+
+          <select id="sort-select" onchange="renderHoldingsTable(computePortfolioMetrics())"
+            class="bg-gray-900 border border-gray-700/80 rounded-xl px-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500">
+            <option value="mv_desc">按持仓市值降序</option>
+            <option value="pnl_desc">按浮盈金额降序</option>
+            <option value="pnl_asc">按浮亏金额降序</option>
+            <option value="pnl_pct_desc">按收益率降序</option>
+            <option value="today_pct_desc">按今日涨跌幅降序</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Subtle Inline Edit Tip -->
+      <div class="px-4 py-2 bg-blue-950/20 border-b border-gray-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-400">
+        <span>提示：已自动绑定您的两条 Google Sheets 公开 CSV 链接；点击表格中的 <strong class="text-gray-200">持有数量</strong> 或 <strong class="text-gray-200">持仓均价</strong> 亦可临时微调。</span>
+        <button onclick="resetToBuiltInSnapshot()" class="text-blue-400 hover:text-blue-300 underline shrink-0">恢复内置底稿</button>
+      </div>
+
+      <!-- Table Wrapper -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-gray-800/80 text-[11px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-900/40">
+              <th class="py-3.5 px-4">标的代码与名称</th>
+              <th class="py-3.5 px-3">市场标签</th>
+              <th class="py-3.5 px-3 text-right">持有数量 ✎</th>
+              <th class="py-3.5 px-3 text-right">持仓均价 ✎</th>
+              <th class="py-3.5 px-3 text-right">最新现价 (今日涨跌)</th>
+              <th class="py-3.5 px-3 text-right">持仓市值 (原币 / CNY)</th>
+              <th class="py-3.5 px-3 text-right">浮动盈亏 (金额 / 比例)</th>
+              <th class="py-3.5 px-4 min-w-[140px]">账户内仓位占比</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-tbody" class="divide-y divide-gray-800/60 text-xs">
+            <!-- Dynamic Rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Bottom Section: Recent T-Trading & Weekly SIP Execution Log + Sync Info -->
+    <section class="glass-card rounded-2xl overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-gray-800/80 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+          </div>
+          <div>
+            <h2 class="text-sm font-bold text-white">近期做T与科创50定投操作流水</h2>
+            <p class="text-[11px] text-gray-400">记录三花智控日内做T降本、科创50ETF周四定投及宽基建仓纪律</p>
+          </div>
+        </div>
+        <button onclick="toggleTxLogSection()" id="tx-toggle-btn"
+          class="px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-xs font-medium text-gray-200 transition">
+          收起流水
+        </button>
+      </div>
+
+      <div id="tx-log-body" class="p-4 sm:p-5 space-y-4">
+        <div id="tx-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          <!-- Dynamic Transaction Cards -->
+        </div>
+
+        <!-- Deployment & Auto-Sync Status Footer -->
+        <div class="pt-3 border-t border-gray-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-400">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>同步架构：已内置您的美股 & A股 Google Sheets 公开 CSV 链接（支持智能表头/市场识别），并叠加腾讯财经实时股价与离岸汇率。</span>
+          </div>
+          <span class="font-num text-gray-500">支持 GitHub Pages 部署 & iPhone 添加主屏幕</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Google Sheets Link Management Modal -->
+  <div id="bind-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <div class="glass-card rounded-2xl max-w-2xl w-full p-5 sm:p-6 border border-gray-700/80 shadow-2xl my-auto">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-gray-800 pb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">专属 Google Sheets 公开 CSV 数据源管理</h3>
+            <p class="text-xs text-gray-400">已预填您的两条专属链接，解析器具备中美市场自动侦测纠偏能力</p>
+          </div>
+        </div>
+        <button onclick="toggleBindModal(false)" class="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="mt-4 space-y-4 max-h-[72vh] overflow-y-auto pr-1">
+        <div class="bg-emerald-950/30 border border-emerald-800/50 rounded-xl p-3.5 text-xs text-emerald-100 space-y-1.5">
+          <div class="font-bold text-emerald-300">已开箱内置您的两条专属网盘链接</div>
+          <p class="text-emerald-100/85 leading-relaxed">
+            以后您在 Google Drive 修改表格并保存后，只需等待约 3 分钟（Google 发布缓存刷新周期），点击看板右上角<strong>「立即同步刷新」</strong>或等待 60 秒自动轮询即可同步最新持仓。若当前网络未开启代理无法连接 Google，看板会自动降级读取本地缓存持仓并照常抓取腾讯财经实时股价。
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-200 mb-1">
+              1. 美股 CSV 默认链接 (<span class="font-mono text-blue-400">US_STOCKS_MASTER</span>)
+            </label>
+            <input id="input-us-csv-url" type="url"
+              class="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-blue-500" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-gray-200 mb-1">
+              2. A股 CSV 默认链接 (<span class="font-mono text-rose-400">CN_STOCKS_MASTER</span>)
+            </label>
+            <input id="input-cn-csv-url" type="url"
+              class="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="mt-5 pt-4 border-t border-gray-800 flex flex-wrap items-center justify-between gap-3">
+        <button onclick="restoreDefaultLinks()" class="px-3 py-2 rounded-xl text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition">
+          恢复预置默认链接
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="toggleBindModal(false)" class="px-4 py-2 rounded-xl text-xs font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 transition">
+            关闭
+          </button>
+          <button onclick="saveBoundUrlsAndSync()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20 transition">
+            保存并立即同步
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. 专属 Google Sheets 公开 CSV 默认数据源链接
+    // =========================================================================
+    const DEFAULT_SHEET_URLS = {
+      usHoldingsCsv: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT5_5EcK1mZQcoNajGu3VXusFo7gMa-bVI3hAWsTkWfzVDjYtx5JZeCQXYpQ-j8IoOPdzGQJ1SloCG/pub?gid=513404133&single=true&output=csv',
+      cnHoldingsCsv: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSw0LyU_w2rY6O5PFmQgOZasb0kR0Sc3yR5OCVIXasMJ6qpvNeu1rEQhBoN6OKhaqtPWVMhFg4vDOzL/pub?gid=1532721021&single=true&output=csv'
+    };
+
+    // =========================================================================
+    // 2. 内置最新持仓底稿快照 (首次加载瞬间展示及无代理无法连接 Google 时的兜底数据源)
+    // =========================================================================
+    const BUILTIN_SNAPSHOT = {
+      fxRate: 7.25,
+      us: {
+        updatedAt: '2026-11-20',
+        cash: -122.45, // USD
+        holdings: [
+          { symbol: 'VONE', name: '罗素1000 ETF-Vanguard', market: 'US', assetType: '美股ETF', qty: 8.3876, costPrice: 309.90, sheetPrice: 313.05, livePrice: null, prevClose: 313.05, note: '美股宽基核心配置' },
+          { symbol: 'AVGO', name: '博通', market: 'US', assetType: '美股个股', qty: 5, costPrice: 365.07, sheetPrice: 304.41, livePrice: null, prevClose: 304.41, note: 'AI算力芯片龙头' },
+          { symbol: 'GOOG', name: '谷歌-C', market: 'US', assetType: '美股个股', qty: 5, costPrice: 350.85, sheetPrice: 264.00, livePrice: null, prevClose: 264.00, note: 'AI与云计算核心资产' },
+          { symbol: 'RACE', name: '法拉利', market: 'US', assetType: '美股个股', qty: 2, costPrice: 401.23, sheetPrice: 392.47, livePrice: null, prevClose: 392.47, note: '超豪华消费护城河' },
+          { symbol: 'META', name: 'Meta', market: 'US', assetType: '美股个股', qty: 1, costPrice: 595.05, sheetPrice: 560.84, livePrice: null, prevClose: 560.84, note: 'AI应用与广告生态' },
+          { symbol: 'SPCX', name: 'SpaceX', market: 'US', assetType: '美股个股', qty: 3, costPrice: 171.14, sheetPrice: 127.79, livePrice: null, prevClose: 127.79, note: '商业航天赛道敞口' },
+          { symbol: 'DRAM', name: 'Roundhill Memory ETF', market: 'US', assetType: '美股ETF', qty: 10, costPrice: 62.50, sheetPrice: 33.61, livePrice: null, prevClose: 33.61, note: '存储芯片主题ETF' },
+          { symbol: 'TSLA', name: '特斯拉', market: 'US', assetType: '美股个股', qty: 1, costPrice: 400.15, sheetPrice: 345.82, livePrice: null, prevClose: 345.82, note: '自动驾驶与机器人' }
+        ]
+      },
+      cn: {
+        updatedAt: '2026-11-27',
+        broker: '银河证券',
+        cashPure: 20506.09,
+        holdings: [
+          { symbol: '512890', name: '红利低波ETF华泰柏瑞', market: 'CN', subType: '上交所ETF', assetType: 'A股ETF', qty: 34500, costPrice: 1.158, sheetPrice: 1.256, livePrice: null, prevClose: 1.256, note: '长期红利底仓' },
+          { symbol: '515180', name: '红利ETF易方达', market: 'CN', subType: '上交所ETF', assetType: 'A股ETF', qty: 22900, costPrice: 1.292, sheetPrice: 1.357, livePrice: null, prevClose: 1.357, note: '长期红利底仓' },
+          { symbol: '002050', name: '三花智控', market: 'CN', subType: '深交所主板', assetType: 'A股个股', qty: 600, costPrice: 36.435, sheetPrice: 31.000, livePrice: null, prevClose: 31.000, note: '2026-11-27 做T100股31.28卖/31.00买差价+28元' },
+          { symbol: '588000', name: '科创50ETF华夏', market: 'CN', subType: '上交所ETF', assetType: 'A股ETF', qty: 6500, costPrice: 1.491, sheetPrice: 1.230, livePrice: null, prevClose: 1.230, note: '2026-11-26 定投买入500股1.230元' },
+          { symbol: '510300', name: '沪深300ETF华泰柏瑞', market: 'CN', subType: '上交所ETF', assetType: 'A股ETF', qty: 1800, costPrice: 4.046, sheetPrice: 4.023, livePrice: null, prevClose: 4.023, note: '宽基配置' },
+          { symbol: '159567', name: '港股创新药ETF银华', market: 'CN', subType: '深交所ETF', assetType: 'A股ETF', qty: 6200, costPrice: 0.687, sheetPrice: 0.591, livePrice: null, prevClose: 0.591, note: '医药卫星仓' }
+        ],
+        transactions: [
+          { date: '2026-11-27', code: '002050', name: '三花智控', type: '日内做T', detail: '卖出 100股 @ 31.28 / 买入 100股 @ 31.00（做T差价 +28.00元）', badgeColor: 'emerald' },
+          { date: '2026-11-26', code: '588000', name: '科创50ETF华夏', type: '周四定投', detail: '买入 500份 @ 1.230（周四定投第13期，投入 615.00元）', badgeColor: 'blue' },
+          { date: '2026-11-19', code: '588000', name: '科创50ETF华夏', type: '周四定投', detail: '买入 500份 @ 1.322（周四定投第12期，投入 661.00元）', badgeColor: 'blue' },
+          { date: '2026-11-19', code: '002050', name: '三花智控', type: '日内做T', detail: '卖出 100股 @ 32.91 / 买入 100股 @ 32.54（做T净赚 +33.35元）', badgeColor: 'emerald' },
+          { date: '2026-11-17', code: '510300', name: '沪深300ETF华泰柏瑞', type: '宽基建仓', detail: '买入 800份 @ 4.025（投入 3,220.00元）', badgeColor: 'amber' }
+        ]
+      }
+    };
+
+    // =========================================================================
+    // 3. 全局状态管理
+    // =========================================================================
+    let appState = {
+      portfolio: JSON.parse(JSON.stringify(BUILTIN_SNAPSHOT)),
+      urls: { ...DEFAULT_SHEET_URLS },
+      prefs: {
+        priceMode: 'LIVE',       // 'LIVE' | 'SHEET'
+        redUpGreenDown: true,
+        autoRefresh60s: true,
+        marketTab: 'ALL',        // 'ALL' | 'US' | 'CN'
+        doughnutDim: 'MARKET'    // 'MARKET' | 'HOLDING' | 'CATEGORY'
+      },
+      status: {
+        sheetState: 'bound',     // 'bound' | 'synced' | 'cached_fallback' | 'error_fallback'
+        sheetMsg: '已自动绑定专属链接',
+        quoteState: 'pending',   // 'pending' | 'live' | 'partial' | 'offline'
+        quoteMsg: '行情连接中...'
+      }
+    };
+
+    let autoRefreshTimer = null;
+    let allocationChart = null;
+    let pnlChart = null;
+
+    // =========================================================================
+    // 4. 初始化与本地持久化
+    // =========================================================================
+    function initDashboard() {
+      try {
+        const savedPortfolio = localStorage.getItem('gpm_v4_portfolio');
+        if (savedPortfolio) {
+          appState.portfolio = JSON.parse(savedPortfolio);
+        }
+        const savedUrls = localStorage.getItem('gpm_v4_urls');
+        if (savedUrls) {
+          const parsedUrls = JSON.parse(savedUrls);
+          appState.urls = {
+            usHoldingsCsv: parsedUrls.usHoldingsCsv || DEFAULT_SHEET_URLS.usHoldingsCsv,
+            cnHoldingsCsv: parsedUrls.cnHoldingsCsv || DEFAULT_SHEET_URLS.cnHoldingsCsv
+          };
+        }
+        const savedPrefs = localStorage.getItem('gpm_v4_prefs');
+        if (savedPrefs) {
+          appState.prefs = { ...appState.prefs, ...JSON.parse(savedPrefs) };
+        }
+      } catch (e) {
+        console.warn('读取本地缓存异常:', e);
+      }
+
+      document.getElementById('fx-rate-input').value = Number(appState.portfolio.fxRate || 7.25).toFixed(4);
+      document.getElementById('input-us-csv-url').value = appState.urls.usHoldingsCsv;
+      document.getElementById('input-cn-csv-url').value = appState.urls.cnHoldingsCsv;
+
+      document.getElementById('fx-rate-input').addEventListener('change', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+          appState.portfolio.fxRate = val;
+          document.getElementById('fx-source-tag').textContent = '手动';
+          saveToLocal();
+          renderDashboard();
+          showToast(`汇率已手动覆盖为 ${val.toFixed(4)}`, 'info');
+        }
+      });
+
+      updatePriceModeUI();
+      updateColorModeUI();
+      updateAutoRefreshUI();
+      renderDashboard();
+
+      // 页面打开立即自动并行拉取两条 Google Sheets CSV + 腾讯财经实时行情
+      refreshAllData(false);
+      setupAutoRefreshTimer();
+    }
+
+    function saveToLocal() {
+      try {
+        localStorage.setItem('gpm_v4_portfolio', JSON.stringify(appState.portfolio));
+        localStorage.setItem('gpm_v4_urls', JSON.stringify(appState.urls));
+        localStorage.setItem('gpm_v4_prefs', JSON.stringify(appState.prefs));
+      } catch (e) {
+        console.warn('保存 localStorage 失败:', e);
+      }
+    }
+
+    // =========================================================================
+    // 5. 智能自适应 CSV 解析器（自动识别美股 vs A股，即使链接顺序对调也能 100% 正确归类）
+    // =========================================================================
+    async function fetchGoogleCsvWithTimeout(url, timeoutMs = 7000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const sep = url.includes('?') ? '&' : '?';
+        const res = await fetch(`${url}${sep}_t=${Date.now()}`, {
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<!DOCTYPE')) {
+          throw new Error('返回非有效 CSV 内容');
+        }
+        return text;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function detectCsvMarket(csvText, fallbackHint = 'US') {
+      const upper = csvText.toUpperCase();
+      let usScore = 0;
+      let cnScore = 0;
+
+      // 美股强特征
+      ['VONE', 'AVGO', 'GOOG', 'TSLA', 'META', 'RACE', 'SPCX', 'DRAM', 'USD', '美元', '美股', 'NASDAQ', 'NYSE'].forEach(kw => {
+        if (upper.includes(kw)) usScore += 2;
+      });
+
+      // A股强特征
+      ['002050', '588000', '512890', '515180', '510300', '159567', '证券代码', '上交所', '深交所', '银河', 'A股', 'CNY', '人民币'].forEach(kw => {
+        if (upper.includes(kw)) cnScore += 2;
+      });
+
+      if (usScore > cnScore) return 'US';
+      if (cnScore > usScore) return 'CN';
+      return fallbackHint;
+    }
+
+    function cleanFinancialNumber(val) {
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (val === null || val === undefined) return 0;
+      const str = String(val).trim();
+      if (!str || str === '-' || str === '--') return 0;
+      // 去除千分位逗号、货币符号 ¥ $、百分号 %、中文单位
+      const cleaned = str.replace(/[¥$,%\s,元股份人民币美元]/g, '');
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? 0 : n;
+    }
+
+    function parseSmartHoldingsCsv(csvText, fallbackHint = 'US') {
+      const detectedMarket = detectCsvMarket(csvText, fallbackHint);
+      const parsed = Papa.parse(csvText, { skipEmptyLines: true });
+      const rows = parsed.data;
+      if (!rows || rows.length < 2) return null;
+
+      // 自动定位表头行
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(12, rows.length); i++) {
+        const rowStr = rows[i].join(' ').toLowerCase();
+        if ((rowStr.includes('代码') || rowStr.includes('symbol') || rowStr.includes('ticker') || rowStr.includes('名称')) &&
+            (rowStr.includes('数量') || rowStr.includes('qty') || rowStr.includes('成本') || rowStr.includes('均价') || rowStr.includes('份额'))) {
+          headerIdx = i;
+          break;
+        }
+      }
+
+      const headers = rows[headerIdx].map(h => String(h || '').trim().toLowerCase());
+      const findCol = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+
+      const colSym = findCol(['代码', 'symbol', 'ticker']);
+      const colName = findCol(['名称', 'name', '标的', '股票']);
+      const colSubType = findCol(['市场', '类型', 'type', '交易所', '板块']);
+      const colQty = findCol(['数量', 'qty', '份额', '持股', '股数']);
+      const colCost = findCol(['成本', '均价', 'cost', 'avg', '买入价']);
+      const colPrice = findCol(['现价', '最新', '当前价', 'price', 'close', '市价']);
+      const colNote = findCol(['备注', '说明', '策略', 'note', 'comment', '记录']);
+
+      const existingMap = new Map();
+      const currentList = detectedMarket === 'US' ? appState.portfolio.us.holdings : appState.portfolio.cn.holdings;
+      currentList.forEach(item => existingMap.set(item.symbol.toUpperCase(), item));
+
+      const resultHoldings = [];
+      let detectedCash = null;
+
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const r = rows[i];
+        const rowJoined = r.join(' ').trim();
+        if (!rowJoined) continue;
+
+        // 提取现金行
+        if (rowJoined.includes('现金') || rowJoined.includes('可用资金') || rowJoined.includes('余额') || rowJoined.toLowerCase().includes('cash')) {
+          const nums = r.map(cleanFinancialNumber).filter(n => n !== 0);
+          if (nums.length > 0) detectedCash = nums[nums.length - 1];
+          continue;
+        }
+
+        // 过滤汇总/合计行
+        if (rowJoined.startsWith('合计') || rowJoined.startsWith('总计') || rowJoined.includes('总市值') || rowJoined.toLowerCase().startsWith('total')) {
+          continue;
+        }
+
+        let symbol = colSym >= 0 ? String(r[colSym] || '').trim().toUpperCase() : '';
+        // 清理可能附带的前缀如 SH512890 / SZ002050
+        symbol = symbol.replace(/^(SH|SZ|US)\.?/i, '');
+
+        // A股 6 位数字代码补齐前导零（如 2050 -> 002050）
+        if (detectedMarket === 'CN' && /^\d+$/.test(symbol) && symbol.length < 6) {
+          symbol = symbol.padStart(6, '0');
+        }
+
+        const name = colName >= 0 ? String(r[colName] || '').trim() : symbol;
+        if (!symbol && !name) continue;
+
+        const qty = colQty >= 0 ? cleanFinancialNumber(r[colQty]) : 0;
+        const costPrice = colCost >= 0 ? cleanFinancialNumber(r[colCost]) : 0;
+        const rawSheetPrice = colPrice >= 0 ? cleanFinancialNumber(r[colPrice]) : 0;
+        const sheetPrice = rawSheetPrice > 0 ? rawSheetPrice : costPrice;
+        const subType = colSubType >= 0 ? String(r[colSubType] || '').trim() : (detectedMarket === 'CN' ? 'A股/ETF' : '美股');
+        const note = colNote >= 0 ? String(r[colNote] || '').trim() : '';
+
+        // 过滤掉无数量且无成本的无效空行
+        if (qty === 0 && costPrice === 0 && rawSheetPrice === 0) continue;
+
+        const prevItem = existingMap.get(symbol);
+        const assetType = detectedMarket === 'US'
+          ? ((symbol.includes('ETF') || ['VONE', 'DRAM', 'QQQ', 'SPY', 'VOO'].includes(symbol)) ? '美股ETF' : '美股个股')
+          : ((symbol.startsWith('5') || symbol.startsWith('1')) ? 'A股ETF' : 'A股个股');
+
+        resultHoldings.push({
+          symbol: symbol || name,
+          name: name || (prevItem ? prevItem.name : symbol),
+          market: detectedMarket,
+          subType: subType || (prevItem ? prevItem.subType : ''),
+          assetType,
+          qty,
+          costPrice,
+          sheetPrice,
+          livePrice: prevItem ? prevItem.livePrice : null,
+          prevClose: prevItem ? prevItem.prevClose : sheetPrice,
+          note: note || (prevItem ? prevItem.note : '')
+        });
+      }
+
+      return { market: detectedMarket, holdings: resultHoldings, detectedCash };
+    }
+
+    async function syncGoogleSheets(manual = false) {
+      const urlsToFetch = [
+        { url: appState.urls.usHoldingsCsv, hint: 'US' },
+        { url: appState.urls.cnHoldingsCsv, hint: 'CN' }
+      ].filter(item => Boolean(item.url && item.url.trim()));
+
+      if (urlsToFetch.length === 0) {
+        appState.status.sheetState = 'cached_fallback';
+        appState.status.sheetMsg = '使用内置底稿快照';
+        return;
+      }
+
+      // 并行拉取两条专属 CSV 链接
+      const results = await Promise.allSettled(
+        urlsToFetch.map(item => fetchGoogleCsvWithTimeout(item.url).then(text => ({ text, hint: item.hint })))
+      );
+
+      let syncedMarkets = [];
+      let anyError = false;
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      results.forEach(res => {
+        if (res.status === 'fulfilled') {
+          const parsed = parseSmartHoldingsCsv(res.value.text, res.value.hint);
+          if (parsed && parsed.holdings.length > 0) {
+            if (parsed.market === 'US') {
+              appState.portfolio.us.holdings = parsed.holdings;
+              appState.portfolio.us.updatedAt = todayStr;
+              if (parsed.detectedCash !== null) appState.portfolio.us.cash = parsed.detectedCash;
+              if (!syncedMarkets.includes('美股')) syncedMarkets.push('美股');
+            } else {
+              appState.portfolio.cn.holdings = parsed.holdings;
+              appState.portfolio.cn.updatedAt = todayStr;
+              if (parsed.detectedCash !== null) appState.portfolio.cn.cashPure = parsed.detectedCash;
+              if (!syncedMarkets.includes('A股')) syncedMarkets.push('A股');
+            }
+          }
+        } else {
+          anyError = true;
+          console.warn('CSV 拉取失败:', res.reason);
+        }
+      });
+
+      const nowTime = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+      if (syncedMarkets.length > 0 && !anyError) {
+        appState.status.sheetState = 'synced';
+        appState.status.sheetMsg = `网盘已同步 (${syncedMarkets.join('+')} · ${nowTime})`;
+        saveToLocal();
+        if (manual) {
+          showToast(`Google Sheets 同步成功：${syncedMarkets.join('、')}持仓已更新`, 'success');
+        }
+      } else if (syncedMarkets.length > 0 && anyError) {
+        appState.status.sheetState = 'synced';
+        appState.status.sheetMsg = `部分同步 (${syncedMarkets.join('+')})`;
+        saveToLocal();
+        if (manual) {
+          showToast(`已同步 ${syncedMarkets.join('、')}，另一条表格连接超时已用本地兜底`, 'warning');
+        }
+      } else {
+        appState.status.sheetState = 'error_fallback';
+        appState.status.sheetMsg = '离线缓存兜底中（未连上Google）';
+        if (manual) {
+          showToast('暂未连上 Google Sheets（如在国内请确认开启代理），已自动使用本地缓存持仓并抓取实时股价', 'warning');
+        }
+      }
+    }
+
+    // =========================================================================
+    // 6. 腾讯财经 (qt.gtimg.cn) 实时股价与 USD/CNH 汇率抓取引擎
+    // =========================================================================
+    function buildTencentTicker(item) {
+      const sym = String(item.symbol || '').trim();
+      if (item.market === 'US') {
+        return `us${sym.toUpperCase()}`;
+      }
+      if (sym.startsWith('5') || sym.startsWith('6')) {
+        return `sh${sym}`;
+      }
+      return `sz${sym}`;
+    }
+
+    function injectGbkScript(url, timeoutMs = 6500) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = url;
+        script.charset = 'gbk';
+        let done = false;
+
+        const timer = setTimeout(() => {
+          if (!done) {
+            done = true;
+            script.remove();
+            reject(new Error('腾讯财经请求超时'));
+          }
+        }, timeoutMs);
+
+        script.onload = () => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            script.remove();
+            resolve();
+          }
+        };
+
+        script.onerror = () => {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            script.remove();
+            reject(new Error('腾讯财经脚本加载异常'));
+          }
+        };
+
+        document.head.appendChild(script);
+      });
+    }
+
+    async function fetchTencentLiveQuotes(manual = false) {
+      const usTickers = appState.portfolio.us.holdings.map(buildTencentTicker);
+      const cnTickers = appState.portfolio.cn.holdings.map(buildTencentTicker);
+      const allTickers = [...usTickers, ...cnTickers, 'whUSDCNH', 'whUSDCNY'];
+
+      if (allTickers.length === 0) return;
+
+      const queryUrl = `https://qt.gtimg.cn/q=${allTickers.join(',')}&_t=${Date.now()}`;
+
+      try {
+        await injectGbkScript(queryUrl, 6500);
+
+        let successCount = 0;
+        const totalTargets = usTickers.length + cnTickers.length;
+
+        appState.portfolio.us.holdings.forEach(item => {
+          const ticker = buildTencentTicker(item);
+          const raw = window[`v_${ticker}`];
+          if (raw) {
+            const parts = raw.split('~');
+            const price = parseFloat(parts[3]);
+            const prevClose = parseFloat(parts[4]);
+            if (!isNaN(price) && price > 0) {
+              item.livePrice = price;
+              if (!isNaN(prevClose) && prevClose > 0) item.prevClose = prevClose;
+              successCount++;
+            }
+          }
+        });
+
+        appState.portfolio.cn.holdings.forEach(item => {
+          const ticker = buildTencentTicker(item);
+          const raw = window[`v_${ticker}`];
+          if (raw) {
+            const parts = raw.split('~');
+            const price = parseFloat(parts[3]);
+            const prevClose = parseFloat(parts[4]);
+            if (!isNaN(price) && price > 0) {
+              item.livePrice = price;
+              if (!isNaN(prevClose) && prevClose > 0) item.prevClose = prevClose;
+              successCount++;
+            }
+          }
+        });
+
+        const fxRawCnh = window['v_whUSDCNH'];
+        const fxRawCny = window['v_whUSDCNY'];
+        let liveFx = NaN;
+        if (fxRawCnh) {
+          const p = fxRawCnh.split('~');
+          liveFx = parseFloat(p[3]);
+        }
+        if ((isNaN(liveFx) || liveFx <= 5 || liveFx >= 10) && fxRawCny) {
+          const p = fxRawCny.split('~');
+          liveFx = parseFloat(p[3]);
+        }
+        if (!isNaN(liveFx) && liveFx > 5 && liveFx < 10) {
+          appState.portfolio.fxRate = liveFx;
+          document.getElementById('fx-rate-input').value = liveFx.toFixed(4);
+          document.getElementById('fx-source-tag').textContent = '实时';
+        }
+
+        const nowTime = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        document.getElementById('last-refresh-label').textContent = `最近同步: ${nowTime}`;
+
+        if (successCount > 0) {
+          appState.status.quoteState = successCount === totalTargets ? 'live' : 'partial';
+          appState.status.quoteMsg = `实时行情在线 (${successCount}/${totalTargets})`;
+          saveToLocal();
+          if (manual) {
+            showToast(`实时行情已更新（${successCount}/${totalTargets} 只标的）`, 'success');
+          }
+        } else {
+          appState.status.quoteState = 'offline';
+          appState.status.quoteMsg = '行情未返回（用快照价）';
+        }
+      } catch (err) {
+        console.warn('腾讯财经实时行情获取失败:', err);
+        appState.status.quoteState = 'offline';
+        appState.status.quoteMsg = '行情离线（用快照价）';
+      }
+    }
+
+    async function refreshAllData(manual = false) {
+      const icon = document.getElementById('refresh-spin-icon');
+      icon.classList.add('animate-spin');
+      try {
+        await syncGoogleSheets(manual);
+        await fetchTencentLiveQuotes(manual);
+        renderDashboard();
+      } finally {
+        icon.classList.remove('animate-spin');
+      }
+    }
+
+    // =========================================================================
+    // 7. 核心财务计算引擎
+    // =========================================================================
+    function getEffectivePrice(item) {
+      if (appState.prefs.priceMode === 'LIVE' && item.livePrice !== null && !isNaN(item.livePrice) && item.livePrice > 0) {
+        return item.livePrice;
+      }
+      return item.sheetPrice;
+    }
+
+    function computePortfolioMetrics() {
+      const fx = appState.portfolio.fxRate || 7.25;
+      const cnCash = Number(appState.portfolio.cn.cashPure || 0);
+      const usCashUsd = Number(appState.portfolio.us.cash || 0);
+
+      let cnMv = 0, cnCost = 0, cnCumPnl = 0, cnTodayPnl = 0;
+      appState.portfolio.cn.holdings.forEach(item => {
+        const price = getEffectivePrice(item);
+        const mv = item.qty * price;
+        const cost = item.qty * item.costPrice;
+        const prev = item.prevClose || price;
+        cnMv += mv;
+        cnCost += cost;
+        cnCumPnl += (mv - cost);
+        cnTodayPnl += item.qty * (price - prev);
+      });
+
+      let usMvUsd = 0, usCostUsd = 0, usCumPnlUsd = 0, usTodayPnlUsd = 0;
+      appState.portfolio.us.holdings.forEach(item => {
+        const price = getEffectivePrice(item);
+        const mv = item.qty * price;
+        const cost = item.qty * item.costPrice;
+        const prev = item.prevClose || price;
+        usMvUsd += mv;
+        usCostUsd += cost;
+        usCumPnlUsd += (mv - cost);
+        usTodayPnlUsd += item.qty * (price - prev);
+      });
+
+      const usMvCny = usMvUsd * fx;
+      const usCostCny = usCostUsd * fx;
+      const usCumPnlCny = usCumPnlUsd * fx;
+      const usTodayPnlCny = usTodayPnlUsd * fx;
+      const usCashCny = usCashUsd * fx;
+
+      const cnNetAssetCny = cnMv + cnCash;
+      const usNetAssetUsd = usMvUsd + usCashUsd;
+      const usNetAssetCny = usNetAssetUsd * fx;
+
+      const globalTotalAssetCny = cnNetAssetCny + usNetAssetCny;
+      const globalTotalAssetUsd = globalTotalAssetCny / fx;
+
+      const globalTotalMvCny = cnMv + usMvCny;
+      const globalTotalCostCny = cnCost + usCostCny;
+      const globalCumPnlCny = cnCumPnl + usCumPnlCny;
+      const globalCumPnlPct = globalTotalCostCny > 0 ? (globalCumPnlCny / globalTotalCostCny) * 100 : 0;
+      const globalTodayPnlCny = cnTodayPnl + usTodayPnlCny;
+
+      const positionRatio = globalTotalAssetCny > 0 ? (globalTotalMvCny / globalTotalAssetCny) * 100 : 0;
+
+      return {
+        fx,
+        cnCash,
+        usCashUsd,
+        usCashCny,
+        cnMv,
+        cnCost,
+        cnCumPnl,
+        cnTodayPnl,
+        usMvUsd,
+        usMvCny,
+        usCostUsd,
+        usCumPnlUsd,
+        usCumPnlCny,
+        usTodayPnlUsd,
+        cnNetAssetCny,
+        usNetAssetUsd,
+        usNetAssetCny,
+        globalTotalAssetCny,
+        globalTotalAssetUsd,
+        globalTotalMvCny,
+        globalCumPnlCny,
+        globalCumPnlPct,
+        globalTodayPnlCny,
+        positionRatio
+      };
+    }
+
+    // =========================================================================
+    // 8. 格式化与 UI 渲染
+    // =========================================================================
+    function fmtNum(val, decimals = 2) {
+      if (val === null || val === undefined || isNaN(val)) return '0.00';
+      return Number(val).toLocaleString('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+    }
+
+    function fmtSigned(val, symbol = '', decimals = 2) {
+      if (val === null || val === undefined || isNaN(val)) return `${symbol}0.00`;
+      const sign = val > 0.0001 ? '+' : (val < -0.0001 ? '-' : '');
+      return `${sign}${symbol}${fmtNum(Math.abs(val), decimals)}`;
+    }
+
+    function getColorTextClass(val) {
+      if (val > 0.0001) return appState.prefs.redUpGreenDown ? 'text-rose-400' : 'text-emerald-400';
+      if (val < -0.0001) return appState.prefs.redUpGreenDown ? 'text-emerald-400' : 'text-rose-400';
+      return 'text-gray-400';
+    }
+
+    function getColorBadgeClass(val) {
+      if (val > 0.0001) {
+        return appState.prefs.redUpGreenDown
+          ? 'bg-rose-500/15 text-rose-400 border border-rose-500/25'
+          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25';
+      }
+      if (val < -0.0001) {
+        return appState.prefs.redUpGreenDown
+          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+          : 'bg-rose-500/15 text-rose-400 border border-rose-500/25';
+      }
+      return 'bg-gray-800 text-gray-400 border border-gray-700';
+    }
+
+    function getColorHex(val) {
+      if (val >= 0) return appState.prefs.redUpGreenDown ? '#f43f5e' : '#10b981';
+      return appState.prefs.redUpGreenDown ? '#10b981' : '#f43f5e';
+    }
+
+    function updateStatusPills() {
+      const sheetBadge = document.getElementById('sheet-status-badge');
+      const sheetDot = document.getElementById('sheet-status-dot');
+      const sheetText = document.getElementById('sheet-status-text');
+
+      sheetText.textContent = appState.status.sheetMsg;
+      if (appState.status.sheetState === 'synced') {
+        sheetBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/25';
+        sheetDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      } else if (appState.status.sheetState === 'error_fallback') {
+        sheetBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/25';
+        sheetDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      } else {
+        sheetBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/25';
+        sheetDot.className = 'w-1.5 h-1.5 rounded-full bg-blue-400';
+      }
+
+      const qBadge = document.getElementById('quote-status-badge');
+      const qDot = document.getElementById('quote-status-dot');
+      const qText = document.getElementById('quote-status-text');
+
+      qText.textContent = appState.status.quoteMsg;
+      if (appState.status.quoteState === 'live' || appState.status.quoteState === 'partial') {
+        qBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/25';
+        qDot.className = 'relative w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot';
+      } else {
+        qBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-800 text-gray-400 border border-gray-700';
+        qDot.className = 'relative w-1.5 h-1.5 rounded-full bg-gray-400';
+      }
+    }
+
+    function renderDashboard() {
+      updateStatusPills();
+      const m = computePortfolioMetrics();
+
+      document.getElementById('us-date-label').textContent = appState.portfolio.us.updatedAt || '2026-11-20';
+      document.getElementById('cn-date-label').textContent = appState.portfolio.cn.updatedAt || '2026-11-27';
+
+      // Sub-bar inline editable cash display
+      document.getElementById('bar-cn-cash').textContent = fmtNum(m.cnCash);
+      const usCashEl = document.getElementById('bar-us-cash');
+      usCashEl.textContent = m.usCashUsd < 0 ? `-$${fmtNum(Math.abs(m.usCashUsd))}` : `$${fmtNum(m.usCashUsd)}`;
+      usCashEl.parentElement.className = `font-num font-semibold hover:text-blue-400 hover:underline decoration-dashed underline-offset-4 cursor-pointer ${m.usCashUsd < 0 ? 'text-amber-400' : 'text-emerald-400'}`;
+
+      // KPI 1: Global Total Assets
+      document.getElementById('kpi-global-asset').textContent = `¥${fmtNum(m.globalTotalAssetCny)}`;
+      document.getElementById('kpi-global-asset-usd').textContent = `≈ $${fmtNum(m.globalTotalAssetUsd)} USD (汇率 ${m.fx.toFixed(4)})`;
+
+      // KPI 2: Global Total Market Value & Position Ratio
+      document.getElementById('kpi-global-mv').textContent = `¥${fmtNum(m.globalTotalMvCny)}`;
+      document.getElementById('kpi-position-ratio').textContent = `仓位 ${m.positionRatio.toFixed(1)}%`;
+      document.getElementById('kpi-global-mv-breakdown').textContent = `A股 ¥${fmtNum(m.cnMv)} | 美股 $${fmtNum(m.usMvUsd)}`;
+
+      // KPI 3: Cumulative Unrealized P&L & Yield
+      const cumPnlEl = document.getElementById('kpi-cum-pnl');
+      const cumPctEl = document.getElementById('kpi-cum-pnl-pct');
+      const todayPnlEl = document.getElementById('kpi-today-pnl');
+
+      cumPnlEl.className = `mt-2.5 text-2xl sm:text-3xl font-bold font-num tracking-tight ${getColorTextClass(m.globalCumPnlCny)}`;
+      cumPnlEl.textContent = fmtSigned(m.globalCumPnlCny, '¥');
+
+      cumPctEl.className = `px-2 py-0.5 rounded-md text-[11px] font-num font-semibold ${getColorBadgeClass(m.globalCumPnlCny)}`;
+      cumPctEl.textContent = `${m.globalCumPnlPct >= 0 ? '+' : ''}${m.globalCumPnlPct.toFixed(2)}%`;
+
+      todayPnlEl.className = `font-semibold ${getColorTextClass(m.globalTodayPnlCny)}`;
+      todayPnlEl.textContent = fmtSigned(m.globalTodayPnlCny, '¥');
+
+      // KPI 4: Market Assets & Cash Distribution
+      document.getElementById('kpi-cn-net').textContent = `¥${fmtNum(m.cnNetAssetCny)}`;
+      const cnPnlSpan = document.getElementById('kpi-cn-pnl');
+      cnPnlSpan.className = `ml-1 text-[11px] ${getColorTextClass(m.cnCumPnl)}`;
+      cnPnlSpan.textContent = `(${fmtSigned(m.cnCumPnl, '¥')})`;
+
+      document.getElementById('kpi-us-net').textContent = `$${fmtNum(m.usNetAssetUsd)}`;
+      const usPnlSpan = document.getElementById('kpi-us-pnl');
+      usPnlSpan.className = `ml-1 text-[11px] ${getColorTextClass(m.usCumPnlUsd)}`;
+      usPnlSpan.textContent = `(${fmtSigned(m.usCumPnlUsd, '$')})`;
+
+      // Tab Labels
+      const usCount = appState.portfolio.us.holdings.length;
+      const cnCount = appState.portfolio.cn.holdings.length;
+      document.getElementById('holdings-count-badge').textContent = usCount + cnCount;
+      document.getElementById('mkt-tab-ALL').textContent = `全部资产 (${usCount + cnCount})`;
+      document.getElementById('mkt-tab-US').textContent = `美股账户 (${usCount})`;
+      document.getElementById('mkt-tab-CN').textContent = `A股账户 (${cnCount})`;
+
+      renderHoldingsTable(m);
+      renderTransactionsLog();
+      renderCharts(m);
+    }
+
+    function renderHoldingsTable(m) {
+      const tbody = document.getElementById('holdings-tbody');
+      const query = (document.getElementById('search-input').value || '').trim().toLowerCase();
+      const sortBy = document.getElementById('sort-select').value;
+      const fx = m.fx;
+
+      let rows = [];
+
+      if (appState.prefs.marketTab === 'ALL' || appState.prefs.marketTab === 'US') {
+        appState.portfolio.us.holdings.forEach((item, idx) => {
+          const price = getEffectivePrice(item);
+          const mvOrig = item.qty * price;
+          const costOrig = item.qty * item.costPrice;
+          const pnlOrig = mvOrig - costOrig;
+          const pnlPct = costOrig > 0 ? (pnlOrig / costOrig) * 100 : 0;
+          const prev = item.prevClose || price;
+          const todayPct = prev > 0 ? ((price - prev) / prev) * 100 : 0;
+          const mvCny = mvOrig * fx;
+          const pnlCny = pnlOrig * fx;
+          const accountSharePct = m.usMvUsd > 0 ? (mvOrig / m.usMvUsd) * 100 : 0;
+
+          rows.push({
+            ...item,
+            idx,
+            currSymbol: '$',
+            effectivePrice: price,
+            isLiveUsed: appState.prefs.priceMode === 'LIVE' && item.livePrice !== null,
+            mvOrig,
+            mvCny,
+            pnlOrig,
+            pnlCny,
+            pnlPct,
+            todayPct,
+            accountSharePct
+          });
+        });
+      }
+
+      if (appState.prefs.marketTab === 'ALL' || appState.prefs.marketTab === 'CN') {
+        appState.portfolio.cn.holdings.forEach((item, idx) => {
+          const price = getEffectivePrice(item);
+          const mvOrig = item.qty * price;
+          const costOrig = item.qty * item.costPrice;
+          const pnlOrig = mvOrig - costOrig;
+          const pnlPct = costOrig > 0 ? (pnlOrig / costOrig) * 100 : 0;
+          const prev = item.prevClose || price;
+          const todayPct = prev > 0 ? ((price - prev) / prev) * 100 : 0;
+          const accountSharePct = m.cnMv > 0 ? (mvOrig / m.cnMv) * 100 : 0;
+
+          rows.push({
+            ...item,
+            idx,
+            currSymbol: '¥',
+            effectivePrice: price,
+            isLiveUsed: appState.prefs.priceMode === 'LIVE' && item.livePrice !== null,
+            mvOrig,
+            mvCny: mvOrig,
+            pnlOrig,
+            pnlCny: pnlOrig,
+            pnlPct,
+            todayPct,
+            accountSharePct
+          });
+        });
+      }
+
+      if (query) {
+        rows = rows.filter(r =>
+          (r.symbol && r.symbol.toLowerCase().includes(query)) ||
+          (r.name && r.name.toLowerCase().includes(query)) ||
+          (r.note && r.note.toLowerCase().includes(query)) ||
+          (r.subType && r.subType.toLowerCase().includes(query))
+        );
+      }
+
+      rows.sort((a, b) => {
+        if (sortBy === 'mv_desc') return b.mvCny - a.mvCny;
+        if (sortBy === 'pnl_desc') return b.pnlCny - a.pnlCny;
+        if (sortBy === 'pnl_asc') return a.pnlCny - b.pnlCny;
+        if (sortBy === 'pnl_pct_desc') return b.pnlPct - a.pnlPct;
+        if (sortBy === 'today_pct_desc') return b.todayPct - a.todayPct;
+        return 0;
+      });
+
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-10 text-center text-gray-500 text-xs">未找到匹配的持仓标的</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map(r => {
+        const isCN = r.market === 'CN';
+        const priceDecimals = isCN && r.effectivePrice < 10 ? 3 : 2;
+        const qtyStr = Number.isInteger(r.qty) ? fmtNum(r.qty, 0) : fmtNum(r.qty, 4);
+
+        const marketTag = isCN
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/25">${r.subType || 'A股'}</span>`
+          : `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/25">美股</span>`;
+
+        const todayClass = getColorTextClass(r.todayPct);
+        const todayStr = `${r.todayPct >= 0 ? '+' : ''}${r.todayPct.toFixed(2)}%`;
+
+        const pnlClass = getColorTextClass(r.pnlOrig);
+        const pnlBadgeClass = getColorBadgeClass(r.pnlOrig);
+        const barColor = isCN ? 'bg-rose-500' : 'bg-blue-500';
+
+        return `
+          <tr class="hover:bg-gray-800/40 transition-colors">
+            <td class="py-3.5 px-4">
+              <div class="font-semibold text-white">${r.name}</div>
+              <div class="text-[11px] font-num text-gray-400 mt-0.5 flex items-center gap-1.5">
+                <span>${r.symbol}</span>
+                ${r.note ? `<span class="text-gray-500 truncate max-w-[180px]" title="${r.note}">· ${r.note}</span>` : ''}
+              </div>
+            </td>
+
+            <td class="py-3.5 px-3 whitespace-nowrap">
+              ${marketTag}
+            </td>
+
+            <td class="py-3.5 px-3 text-right font-num whitespace-nowrap">
+              <button onclick="openInlineQuickEdit('${r.market}', ${r.idx}, 'qty')"
+                title="点击快捷修改持有数量"
+                class="text-gray-200 hover:text-blue-400 hover:underline decoration-dashed underline-offset-4 cursor-pointer font-medium">
+                ${qtyStr}
+              </button>
+            </td>
+
+            <td class="py-3.5 px-3 text-right font-num whitespace-nowrap">
+              <button onclick="openInlineQuickEdit('${r.market}', ${r.idx}, 'costPrice')"
+                title="点击快捷修改持仓均价"
+                class="text-gray-300 hover:text-blue-400 hover:underline decoration-dashed underline-offset-4 cursor-pointer">
+                ${r.currSymbol}${fmtNum(r.costPrice, priceDecimals)}
+              </button>
+            </td>
+
+            <td class="py-3.5 px-3 text-right font-num whitespace-nowrap">
+              <div class="text-white font-semibold flex items-center justify-end gap-1">
+                <span class="w-1.5 h-1.5 rounded-full ${r.isLiveUsed ? 'bg-emerald-400' : 'bg-gray-500'}" title="${r.isLiveUsed ? '腾讯实时行情' : '表格快照价格'}"></span>
+                <span>${r.currSymbol}${fmtNum(r.effectivePrice, priceDecimals)}</span>
+              </div>
+              <div class="text-[11px] font-semibold mt-0.5 ${todayClass}">
+                ${todayStr}
+              </div>
+            </td>
+
+            <td class="py-3.5 px-3 text-right font-num whitespace-nowrap">
+              <div class="text-white font-semibold">${r.currSymbol}${fmtNum(r.mvOrig)}</div>
+              <div class="text-[11px] text-gray-500 mt-0.5">
+                ${isCN ? `≈ $${fmtNum(r.mvOrig / fx)}` : `≈ ¥${fmtNum(r.mvCny)}`}
+              </div>
+            </td>
+
+            <td class="py-3.5 px-3 text-right font-num whitespace-nowrap">
+              <div class="font-semibold ${pnlClass}">${fmtSigned(r.pnlOrig, r.currSymbol)}</div>
+              <div class="mt-0.5 flex items-center justify-end gap-1">
+                ${!isCN ? `<span class="text-[10px] text-gray-500">(${fmtSigned(r.pnlCny, '¥')})</span>` : ''}
+                <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold ${pnlBadgeClass}">
+                  ${r.pnlPct >= 0 ? '+' : ''}${r.pnlPct.toFixed(2)}%
+                </span>
+              </div>
+            </td>
+
+            <td class="py-3.5 px-4 whitespace-nowrap">
+              <div class="flex items-center justify-between text-[11px] font-num text-gray-300 mb-1">
+                <span>${r.accountSharePct.toFixed(1)}%</span>
+                <span class="text-[10px] text-gray-500">${isCN ? 'A股仓位' : '美股仓位'}</span>
+              </div>
+              <div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${Math.min(100, Math.max(2, r.accountSharePct))}%"></div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openInlineQuickEdit(market, idx, field) {
+      const list = market === 'US' ? appState.portfolio.us.holdings : appState.portfolio.cn.holdings;
+      const item = list[idx];
+      if (!item) return;
+
+      const label = field === 'qty' ? '持有数量' : '持仓均价';
+      showEditPopover(`快捷微调 · ${item.name} (${item.symbol})`, `新的${label}`, item[field], (val) => {
+        if (!isNaN(val) && val >= 0) {
+          item[field] = val;
+          saveToLocal();
+          renderDashboard();
+          showToast(`已更新 ${item.name} 的${label}为 ${val}`, 'success');
+        }
+      });
+    }
+
+    function openCashQuickEdit(market) {
+      const isCN = market === 'CN';
+      const title = isCN ? '修改银河A股可用现金 (CNY)' : '修改美股账户现金余额 (USD)';
+      const currentVal = isCN ? appState.portfolio.cn.cashPure : appState.portfolio.us.cash;
+      showEditPopover(title, isCN ? '可用现金金额 (支持小数)' : '美元现金 (负数为融资/欠款)', currentVal, (val) => {
+        if (!isNaN(val)) {
+          if (isCN) appState.portfolio.cn.cashPure = val;
+          else appState.portfolio.us.cash = val;
+          saveToLocal();
+          renderDashboard();
+          showToast(`${isCN ? '银河A股' : '美股'}现金已更新并保存`, 'success');
+        }
+      });
+    }
+
+    function showEditPopover(title, label, initialValue, onSave) {
+      const oldBox = document.getElementById('inline-edit-popover');
+      if (oldBox) oldBox.remove();
+
+      const overlay = document.createElement('div');
+      overlay.id = 'inline-edit-popover';
+      overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4';
+      overlay.innerHTML = `
+        <div class="glass-card rounded-2xl max-w-xs w-full p-4 border border-gray-700 shadow-2xl space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">${title}</span>
+            <button onclick="document.getElementById('inline-edit-popover').remove()" class="text-gray-400 hover:text-white text-sm">✕</button>
+          </div>
+          <div>
+            <label class="block text-[11px] text-gray-400 mb-1">${label}</label>
+            <input id="popover-edit-input" type="number" step="any" value="${initialValue}"
+              class="w-full px-3 py-2 bg-gray-950 border border-blue-500 rounded-xl text-sm font-num text-white focus:outline-none" />
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
+            <button onclick="document.getElementById('inline-edit-popover').remove()" class="px-3 py-1.5 rounded-lg bg-gray-800 text-xs text-gray-300">取消</button>
+            <button id="popover-save-btn" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white">确认保存</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const input = document.getElementById('popover-edit-input');
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        onSave(parseFloat(input.value));
+        overlay.remove();
+      };
+
+      document.getElementById('popover-save-btn').onclick = commit;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') overlay.remove();
+      };
+    }
+
+    function renderTransactionsLog() {
+      const grid = document.getElementById('tx-cards-grid');
+      const txs = appState.portfolio.cn.transactions || [];
+      const badgeStyles = {
+        emerald: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25',
+        blue: 'bg-blue-500/15 text-blue-300 border-blue-500/25',
+        amber: 'bg-amber-500/15 text-amber-300 border-amber-500/25'
+      };
+
+      grid.innerHTML = txs.map(tx => `
+        <div class="bg-gray-900/80 border border-gray-800/90 rounded-xl p-3.5 flex flex-col justify-between gap-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeStyles[tx.badgeColor] || badgeStyles.blue}">
+                ${tx.type}
+              </span>
+              <span class="text-xs font-bold text-white">${tx.name}</span>
+              <span class="text-[11px] font-num text-gray-400">${tx.code}</span>
+            </div>
+            <span class="text-[11px] font-num text-gray-500">${tx.date}</span>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">${tx.detail}</p>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 9. Chart.js 双图表渲染
+    // =========================================================================
+    function renderCharts(m) {
+      const fx = m.fx;
+      const dim = appState.prefs.doughnutDim;
+
+      let labels = [];
+      let values = [];
+      let colors = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#eab308'];
+
+      if (dim === 'MARKET') {
+        labels = ['A股持仓市值', '美股持仓市值', '可用现金净额'];
+        values = [
+          Math.round(m.cnMv),
+          Math.round(m.usMvCny),
+          Math.max(0, Math.round(m.cnCash + m.usCashCny))
+        ];
+        colors = ['#f43f5e', '#3b82f6', '#10b981'];
+      } else if (dim === 'CATEGORY') {
+        let aEtf = 0, aStock = 0, uEtf = 0, uStock = 0;
+        appState.portfolio.cn.holdings.forEach(h => {
+          const mv = h.qty * getEffectivePrice(h);
+          if (h.assetType === 'A股ETF') aEtf += mv;
+          else aStock += mv;
+        });
+        appState.portfolio.us.holdings.forEach(h => {
+          const mv = h.qty * getEffectivePrice(h) * fx;
+          if (h.assetType === '美股ETF') uEtf += mv;
+          else uStock += mv;
+        });
+        labels = ['A股ETF (红利/宽基/医药)', '美股科技个股', 'A股个股 (三花智控)', '美股ETF (VONE/DRAM)', '现金净额'];
+        values = [
+          Math.round(aEtf),
+          Math.round(uStock),
+          Math.round(aStock),
+          Math.round(uEtf),
+          Math.max(0, Math.round(m.cnCash + m.usCashCny))
+        ];
+        colors = ['#f43f5e', '#3b82f6', '#f59e0b', '#6366f1', '#10b981'];
+      } else {
+        const allItems = [
+          ...appState.portfolio.cn.holdings.map(h => ({ name: h.name, mv: h.qty * getEffectivePrice(h) })),
+          ...appState.portfolio.us.holdings.map(h => ({ name: h.name, mv: h.qty * getEffectivePrice(h) * fx }))
+        ].sort((a, b) => b.mv - a.mv);
+
+        const top8 = allItems.slice(0, 8);
+        const othersSum = allItems.slice(8).reduce((acc, cur) => acc + cur.mv, 0);
+        labels = top8.map(i => i.name);
+        values = top8.map(i => Math.round(i.mv));
+        if (othersSum > 0) {
+          labels.push('其余持仓');
+          values.push(Math.round(othersSum));
+        }
+      }
+
+      const ctx1 = document.getElementById('allocationChart').getContext('2d');
+      if (allocationChart) allocationChart.destroy();
+
+      allocationChart = new Chart(ctx1, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderColor: '#111827',
+            borderWidth: 2.5,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '64%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: '#d1d5db', font: { size: 11, family: 'Inter' }, boxWidth: 10, padding: 10 }
+            },
+            tooltip: {
+              backgroundColor: '#1f2937',
+              callbacks: {
+                label: (ctx) => {
+                  const val = ctx.raw;
+                  const sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                  const pct = sum > 0 ? ((val / sum) * 100).toFixed(1) : 0;
+                  return ` ¥${fmtNum(val, 0)} (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const pnlList = [
+        ...appState.portfolio.cn.holdings.map(h => ({
+          name: h.name,
+          pnlCny: h.qty * (getEffectivePrice(h) - h.costPrice)
+        })),
+        ...appState.portfolio.us.holdings.map(h => ({
+          name: h.name,
+          pnlCny: h.qty * (getEffectivePrice(h) - h.costPrice) * fx
+        }))
+      ].sort((a, b) => b.pnlCny - a.pnlCny);
+
+      const pnlValues = pnlList.map(i => Number(i.pnlCny.toFixed(2)));
+      const ctx2 = document.getElementById('pnlContributionChart').getContext('2d');
+      if (pnlChart) pnlChart.destroy();
+
+      pnlChart = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: pnlList.map(i => i.name),
+          datasets: [{
+            label: '浮动盈亏 (CNY)',
+            data: pnlValues,
+            backgroundColor: pnlValues.map(v => getColorHex(v)),
+            borderRadius: 4,
+            barThickness: 12
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1f2937',
+              callbacks: { label: (ctx) => ` 浮盈亏: ${fmtSigned(ctx.raw, '¥')} CNY` }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(55, 65, 81, 0.35)' },
+              ticks: { color: '#9ca3af', font: { size: 10, family: 'JetBrains Mono' }, callback: (v) => `¥${v}` }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: '#e5e7eb', font: { size: 11, family: 'Inter' } }
+            }
+          }
+        }
+      });
+    }
+
+    // =========================================================================
+    // 10. 交互控制与弹窗逻辑
+    // =========================================================================
+    function setPriceMode(mode) {
+      appState.prefs.priceMode = mode;
+      saveToLocal();
+      updatePriceModeUI();
+      renderDashboard();
+      showToast(mode === 'LIVE' ? '已切换为「实时行情优先」' : '已切换为「表格快照价」', 'info');
+    }
+
+    function updatePriceModeUI() {
+      ['LIVE', 'SHEET'].forEach(m => {
+        const btn = document.getElementById(`price-mode-${m}`);
+        btn.className = m === appState.prefs.priceMode
+          ? 'px-3 py-1 rounded-lg text-xs font-semibold transition bg-blue-600 text-white'
+          : 'px-3 py-1 rounded-lg text-xs font-semibold transition text-gray-400 hover:text-white';
+      });
+    }
+
+    function toggleColorMode() {
+      appState.prefs.redUpGreenDown = !appState.prefs.redUpGreenDown;
+      saveToLocal();
+      updateColorModeUI();
+      renderDashboard();
+      showToast(`已切换为「${appState.prefs.redUpGreenDown ? '红涨绿跌' : '绿涨红跌'}」`, 'info');
+    }
+
+    function updateColorModeUI() {
+      document.getElementById('color-mode-dot').className = appState.prefs.redUpGreenDown ? 'w-2 h-2 rounded-full bg-rose-500' : 'w-2 h-2 rounded-full bg-emerald-500';
+      document.getElementById('color-mode-text').textContent = appState.prefs.redUpGreenDown ? '红涨绿跌' : '绿涨红跌';
+    }
+
+    function toggleAutoRefresh() {
+      appState.prefs.autoRefresh60s = !appState.prefs.autoRefresh60s;
+      saveToLocal();
+      updateAutoRefreshUI();
+      setupAutoRefreshTimer();
+      showToast(appState.prefs.autoRefresh60s ? '已开启每 60 秒自动轮询' : '已关闭自动轮询', 'info');
+    }
+
+    function updateAutoRefreshUI() {
+      const dot = document.getElementById('auto-refresh-dot');
+      const text = document.getElementById('auto-refresh-text');
+      if (appState.prefs.autoRefresh60s) {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        text.textContent = '60s轮询: 开';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-gray-500';
+        text.textContent = '60s轮询: 关';
+      }
+    }
+
+    function setupAutoRefreshTimer() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      if (appState.prefs.autoRefresh60s) {
+        autoRefreshTimer = setInterval(() => {
+          refreshAllData(false);
+        }, 60000);
+      }
+    }
+
+    function setDoughnutDimension(dim) {
+      appState.prefs.doughnutDim = dim;
+      saveToLocal();
+      ['MARKET', 'HOLDING', 'CATEGORY'].forEach(d => {
+        const btn = document.getElementById(`dim-btn-${d}`);
+        btn.className = d === dim
+          ? 'px-2 py-1 rounded-md font-medium transition bg-blue-600 text-white'
+          : 'px-2 py-1 rounded-md font-medium transition text-gray-400 hover:text-white';
+      });
+      renderCharts(computePortfolioMetrics());
+    }
+
+    function setMarketTab(tab) {
+      appState.prefs.marketTab = tab;
+      saveToLocal();
+      ['ALL', 'US', 'CN'].forEach(t => {
+        const btn = document.getElementById(`mkt-tab-${t}`);
+        btn.className = t === tab
+          ? 'px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-blue-600 text-white'
+          : 'px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-gray-800/80 text-gray-300 hover:bg-gray-800';
+      });
+      renderHoldingsTable(computePortfolioMetrics());
+    }
+
+    function toggleTxLogSection() {
+      const body = document.getElementById('tx-log-body');
+      const btn = document.getElementById('tx-toggle-btn');
+      const isHidden = body.classList.toggle('hidden');
+      btn.textContent = isHidden ? '展开流水' : '收起流水';
+    }
+
+    function toggleBindModal(show) {
+      const modal = document.getElementById('bind-modal');
+      if (show) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    function saveBoundUrlsAndSync() {
+      appState.urls.usHoldingsCsv = document.getElementById('input-us-csv-url').value.trim();
+      appState.urls.cnHoldingsCsv = document.getElementById('input-cn-csv-url').value.trim();
+      saveToLocal();
+      toggleBindModal(false);
+      refreshAllData(true);
+    }
+
+    function restoreDefaultLinks() {
+      appState.urls = { ...DEFAULT_SHEET_URLS };
+      document.getElementById('input-us-csv-url').value = DEFAULT_SHEET_URLS.usHoldingsCsv;
+      document.getElementById('input-cn-csv-url').value = DEFAULT_SHEET_URLS.cnHoldingsCsv;
+      saveToLocal();
+      showToast('已恢复您的两条预置专属链接', 'info');
+    }
+
+    function resetToBuiltInSnapshot() {
+      appState.portfolio = JSON.parse(JSON.stringify(BUILTIN_SNAPSHOT));
+      appState.status.sheetState = 'bound';
+      appState.status.sheetMsg = '已恢复内置底稿快照';
+      document.getElementById('fx-rate-input').value = '7.2500';
+      document.getElementById('fx-source-tag').textContent = '基准';
+      saveToLocal();
+      renderDashboard();
+      fetchTencentLiveQuotes(false).then(() => renderDashboard());
+      showToast('已恢复内置最新持仓底稿', 'info');
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const styles = {
+        success: 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200',
+        warning: 'bg-amber-950/95 border-amber-500/50 text-amber-200',
+        error: 'bg-rose-950/95 border-rose-500/50 text-rose-200',
+        info: 'bg-gray-900/95 border-blue-500/50 text-blue-100'
+      };
+      toast.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-xl text-xs font-medium backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 ${styles[type] || styles.info}`;
+      toast.textContent = msg;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => toast.classList.remove('translate-y-2', 'opacity-0'));
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3600);
+    }
+
+    window.addEventListener('DOMContentLoaded', initDashboard);
+  </script>
+</body>
+</html>
