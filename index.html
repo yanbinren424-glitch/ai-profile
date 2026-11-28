@@ -421,15 +421,16 @@
       grid-template-columns: 1fr;
       gap: 12px;
     }
-    @media (min-width: 640px) {
-      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    @media (min-width: 420px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (min-width: 1024px) {
       .kpi-grid { grid-template-columns: repeat(4, 1fr); }
     }
 
     .kpi-card {
-      padding: 16px;
+      min-width: 0;
+      padding: 14px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -453,7 +454,7 @@
     }
     .kpi-value {
       margin-top: 8px;
-      font-size: 24px;
+      font-size: clamp(18px, 4.5vw, 24px);
       font-weight: 700;
       letter-spacing: -0.02em;
     }
@@ -510,6 +511,29 @@
       width: 100%;
       height: 230px;
     }
+    @media (max-width: 639px) {
+      .header-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .header-actions > * { min-width: 0; justify-content: center; }
+      .fx-box { justify-content: center; }
+      .charts-grid { gap: 10px; }
+      .chart-card { padding: 12px; }
+      .canvas-wrap { height: 205px; }
+      .table-toolbar { padding: 12px; }
+      .sub-bar { align-items: flex-start; }
+    }
+    .analysis-grid { display:grid; grid-template-columns: minmax(0,1.15fr) minmax(0,.85fr); gap:14px; }
+    .analysis-card { padding:16px; min-width:0; }
+    .analysis-list { display:flex; flex-direction:column; gap:11px; margin-top:12px; }
+    .analysis-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; font-size:12px; }
+    .analysis-track { height:6px; border-radius:99px; background:#1f2937; overflow:hidden; margin-top:5px; }
+    .analysis-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,#6366f1,#3b82f6); }
+    .history-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .history-ranges { display:flex; gap:4px; padding:3px; border-radius:9px; background:#070b14; border:1px solid #1f2937; }
+    .history-ranges button { border:0; border-radius:7px; padding:5px 9px; color:#9ca3af; background:transparent; font-size:11px; cursor:pointer; }
+    .history-ranges button.active { color:#fff; background:#4f46e5; }
+    .history-meta { color:#9ca3af; font-size:11px; }
+    @media (max-width: 700px) { .analysis-grid { grid-template-columns:1fr; } }
+    @media (max-width: 390px) { .kpi-card { padding:11px; } .kpi-title { font-size:11px; } .kpi-value { font-size:17px; } .view-tab { font-size:10px; gap:3px; } }
     .canvas-wrap canvas {
       width: 100%;
       height: 100%;
@@ -987,6 +1011,37 @@
       </div>
     </section>
 
+    <!-- 风险结构分析：集中度、资产类别与币种暴露 -->
+    <section class="analysis-grid" id="risk-analysis-section">
+      <div class="card analysis-card">
+        <div class="chart-header">
+          <div><h2 class="chart-title">持仓集中度</h2><p class="chart-sub" id="risk-concentration-sub">按当前看板账户市值计算</p></div>
+          <span class="kpi-badge badge-neutral" id="risk-top3-badge">前3大持仓 --</span>
+        </div>
+        <div id="risk-concentration-list" class="analysis-list"></div>
+      </div>
+      <div class="card analysis-card">
+        <div class="chart-header"><div><h2 class="chart-title">资产结构与币种暴露</h2><p class="chart-sub">按当前资产市值及现金净额估算</p></div></div>
+        <div id="risk-structure-list" class="analysis-list"></div>
+      </div>
+    </section>
+
+    <!-- 账户资产净值历史：本地每日快照 -->
+    <section class="card analysis-card" id="net-worth-history-section">
+      <div class="history-toolbar">
+        <div><h2 class="chart-title">账户资产净值走势</h2><p class="chart-sub">本地每日快照；入金出金未单独调整</p></div>
+        <div class="history-ranges">
+          <button data-history-range="30" class="active" onclick="setHistoryRange(30)">1月</button>
+          <button data-history-range="90" onclick="setHistoryRange(90)">3月</button>
+          <button data-history-range="180" onclick="setHistoryRange(180)">半年</button>
+          <button data-history-range="365" onclick="setHistoryRange(365)">1年</button>
+          <button data-history-range="0" onclick="setHistoryRange(0)">全部</button>
+        </div>
+      </div>
+      <div class="canvas-wrap" style="height:240px;"><canvas id="netWorthCanvas"></canvas></div>
+      <div class="history-meta" id="history-meta">正在建立本地快照...</div>
+    </section>
+
     <!-- 持仓明细表（黄金首屏 4 列布局） -->
     <section class="card table-card">
       <div class="table-toolbar">
@@ -1152,7 +1207,8 @@
         priceMode: 'LIVE',       // 'LIVE' | 'SHEET'
         redUpGreenDown: true,
         autoRefresh60s: true,
-        doughnutDim: 'HOLDING'   // 'HOLDING' | 'CATEGORY' | 'MARKET'
+        doughnutDim: 'HOLDING',  // 'HOLDING' | 'CATEGORY' | 'MARKET'
+        historyRangeDays: 30
       },
       status: {
         sheetState: 'bound',
@@ -1211,6 +1267,12 @@
       updateColorModeUI();
       updateAutoRefreshUI();
       renderDashboard();
+      setHistoryRange(Number(appState.prefs.historyRangeDays || 30));
+      document.getElementById('tx-log-body').classList.add('hidden');
+      document.getElementById('tx-toggle-btn').textContent = '展开流水';
+      recordNetWorthSnapshot();
+      renderNetWorthHistory();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && appState.prefs.autoRefresh60s) refreshAllData(false); });
 
       // 自动同步网盘 CSV + 腾讯财经实时行情
       refreshAllData(false);
@@ -1403,6 +1465,7 @@
           costPrice,
           sheetPrice,
           livePrice: prevItem ? prevItem.livePrice : null,
+          livePriceAt: prevItem ? (prevItem.livePriceAt || null) : null,
           prevClose: prevItem ? prevItem.prevClose : sheetPrice,
           note: note || (prevItem ? prevItem.note : '')
         });
@@ -1518,6 +1581,29 @@
       });
     }
 
+    function getMarketSession(market, now = new Date()) {
+      const zone = market === 'US' ? 'America/New_York' : 'Asia/Shanghai';
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+      const get = type => parts.find(p => p.type === type)?.value;
+      const weekday = get('weekday');
+      const minutes = Number(get('hour')) * 60 + Number(get('minute'));
+      const isWeekday = !['Sat','Sun'].includes(weekday);
+      const open = market === 'US' ? (minutes >= 570 && minutes < 960) : ((minutes >= 570 && minutes < 690) || (minutes >= 780 && minutes < 900));
+      return { open: isWeekday && open, zone };
+    }
+
+    function isQuoteFresh(item, maxAgeMs = 180000) {
+      return !!(item.livePrice && item.livePrice > 0 && item.livePriceAt && (Date.now() - item.livePriceAt) <= maxAgeMs);
+    }
+
+    function getQuoteLabel(item) {
+      if (appState.prefs.priceMode === 'SHEET') return '表格价';
+      if (isQuoteFresh(item)) return '实时';
+      const age = item.livePriceAt ? Date.now() - item.livePriceAt : Infinity;
+      if (!getMarketSession(item.market).open && item.livePrice > 0 && age <= 5 * 86400000) return '最近收盘价';
+      return getMarketSession(item.market).open ? '行情过期' : '非交易时段';
+    }
+
     async function fetchTencentLiveQuotes(manual = false) {
       const usTickers = appState.portfolio.us.holdings.map(buildTencentTicker);
       const cnTickers = appState.portfolio.cn.holdings.map(buildTencentTicker);
@@ -1541,6 +1627,7 @@
             const prevClose = parseFloat(parts[4]);
             if (!isNaN(price) && price > 0) {
               item.livePrice = price;
+              item.livePriceAt = Date.now();
               if (!isNaN(prevClose) && prevClose > 0) item.prevClose = prevClose;
               successCount++;
             }
@@ -1563,14 +1650,16 @@
         const nowTime = new Date().toLocaleTimeString('zh-CN', { hour12: false });
         document.getElementById('last-refresh-label').textContent = `同步: ${nowTime}`;
 
-        if (successCount > 0) {
-          appState.status.quoteState = successCount === totalTargets ? 'live' : 'partial';
-          appState.status.quoteMsg = `实时行情在线 (${successCount}/${totalTargets})`;
+        const freshCount = [...appState.portfolio.us.holdings, ...appState.portfolio.cn.holdings].filter(isQuoteFresh).length;
+        const anyMarketOpen = getMarketSession('CN').open || getMarketSession('US').open;
+        if (freshCount > 0) {
+          appState.status.quoteState = freshCount === totalTargets ? 'live' : 'partial';
+          appState.status.quoteMsg = `有效行情 ${freshCount}/${totalTargets} · 单只独立计时`;
           saveToLocal();
-          if (manual) showToast(`实时行情已更新（${successCount}/${totalTargets} 只标的）`, 'success');
+          if (manual) showToast(`行情更新完成（有效 ${freshCount}/${totalTargets} 只）`, 'success');
         } else {
           appState.status.quoteState = 'offline';
-          appState.status.quoteMsg = '行情未返回（用快照价）';
+          appState.status.quoteMsg = anyMarketOpen ? '行情暂不可用 · 使用表格价' : '非交易时段 · 优先最近收盘价';
         }
       } catch (err) {
         appState.status.quoteState = 'offline';
@@ -1578,14 +1667,20 @@
       }
     }
 
+    let refreshInProgress = false;
     async function refreshAllData(manual = false) {
+      if (refreshInProgress) return;
+      refreshInProgress = true;
       const icon = document.getElementById('refresh-spin-icon');
       icon.classList.add('spin-anim');
       try {
         await syncGoogleSheets(manual);
         await fetchTencentLiveQuotes(manual);
         renderDashboard();
+        recordNetWorthSnapshot();
+        renderNetWorthHistory();
       } finally {
+        refreshInProgress = false;
         icon.classList.remove('spin-anim');
       }
     }
@@ -1594,7 +1689,9 @@
     // 7. 核心财务计算引擎
     // =========================================================================
     function getEffectivePrice(item) {
-      if (appState.prefs.priceMode === 'LIVE' && item.livePrice !== null && !isNaN(item.livePrice) && item.livePrice > 0) {
+      const age = item.livePriceAt ? Date.now() - item.livePriceAt : Infinity;
+      const usableClosedQuote = !getMarketSession(item.market).open && age <= 5 * 86400000;
+      if (appState.prefs.priceMode === 'LIVE' && (isQuoteFresh(item) || usableClosedQuote) && item.livePrice !== null && !isNaN(item.livePrice) && item.livePrice > 0) {
         return item.livePrice;
       }
       return item.sheetPrice;
@@ -1946,6 +2043,8 @@
       renderHoldingsTable(m);
       renderTransactionsLog();
       renderCharts(m);
+      renderRiskAnalysis(m);
+      renderNetWorthHistory();
     }
 
     // =========================================================================
@@ -2001,7 +2100,8 @@
             idx,
             currSymbol: '¥',
             effectivePrice: price,
-            isLiveUsed: appState.prefs.priceMode === 'LIVE' && item.livePrice !== null,
+            isLiveUsed: appState.prefs.priceMode === 'LIVE' && isQuoteFresh(item),
+            quoteLabel: getQuoteLabel(item),
             mvOrig,
             mvSortCny: mvOrig,
             todayPnlOrig,
@@ -2037,7 +2137,8 @@
             idx,
             currSymbol: '$',
             effectivePrice: price,
-            isLiveUsed: appState.prefs.priceMode === 'LIVE' && item.livePrice !== null,
+            isLiveUsed: appState.prefs.priceMode === 'LIVE' && isQuoteFresh(item),
+            quoteLabel: getQuoteLabel(item),
             mvOrig,
             mvSortCny: mvCny,
             todayPnlOrig,
@@ -2115,10 +2216,10 @@
             <!-- 第 2 列：最新价格 + 当日涨跌幅% -->
             <td class="text-right font-num">
               <div class="cell-main" style="display:flex;align-items:center;justify-content:flex-end;gap:4px;">
-                <span class="dot" style="width:5px;height:5px;background:${r.isLiveUsed ? '#34d399' : '#6b7280'};"></span>
+                <span class="dot" title="${r.quoteLabel}" style="width:5px;height:5px;background:${r.isLiveUsed ? '#34d399' : '#f59e0b'};"></span>
                 <span>${r.currSymbol}${fmtNum(r.effectivePrice, priceDecimals)}</span>
               </div>
-              <div class="cell-sub ${todayPctClass}" style="font-weight:600;">${todayPctStr}</div>
+              <div class="cell-sub ${todayPctClass}" style="font-weight:600;">${todayPctStr} · ${r.quoteLabel}</div>
             </td>
 
             <!-- 第 3 列：当日盈亏 -->
@@ -2272,6 +2373,90 @@
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
       return { ctx, width, height };
+    }
+
+    function renderRiskAnalysis(m) {
+      const view = appState.prefs.activeView;
+      let holdings = [];
+      let totalAsset = 0;
+      let etf = 0, stocks = 0, cash = 0;
+      let cnAsset = 0, usAssetCny = 0;
+      if (view === 'CN' || view === 'ALL') {
+        appState.portfolio.cn.holdings.forEach(h => { const v = h.qty * getEffectivePrice(h); holdings.push({ label: h.name, value: v, market: 'CN' }); if (h.assetType === 'A股ETF') etf += v; else stocks += v; });
+        cash += m.cnCash; cnAsset = m.cnNetAssetCny;
+      }
+      if (view === 'US' || view === 'ALL') {
+        appState.portfolio.us.holdings.forEach(h => { const v = h.qty * getEffectivePrice(h) * (view === 'ALL' ? m.fx : 1); holdings.push({ label: h.symbol, value: v, market: 'US' }); if (h.assetType === '美股ETF') etf += v; else stocks += v; });
+        cash += m.usCashUsd * (view === 'ALL' ? m.fx : 1); usAssetCny = m.usNetAssetCny;
+      }
+      const unit = view === 'US' ? '$' : '¥';
+      totalAsset = view === 'CN' ? m.cnNetAssetCny : (view === 'US' ? m.usNetAssetUsd : m.globalTotalAssetCny);
+      const denominator = holdings.reduce((sum, h) => sum + Math.max(0, h.value), 0) || 1;
+      holdings.sort((a,b) => b.value-a.value);
+      const top3 = holdings.slice(0,3).reduce((sum,h)=>sum+h.value,0) / denominator * 100;
+      document.getElementById('risk-concentration-sub').textContent = view === 'ALL' ? 'A股与美股合并折算人民币，按持仓市值计算' : '按当前账户持仓市值计算，不含现金';
+      document.getElementById('risk-top3-badge').textContent = `前3大占 ${top3.toFixed(1)}%`;
+      const list = document.getElementById('risk-concentration-list');
+      list.innerHTML = holdings.slice(0,5).map(h => { const pct = h.value / denominator * 100; return `<div><div class="analysis-row"><span>${h.label} <small style="color:#6b7280">${view==='ALL' ? h.market : ''}</small></span><strong class="font-num">${pct.toFixed(1)}%</strong></div><div class="analysis-track"><div class="analysis-fill" style="width:${Math.min(100,pct)}%"></div></div></div>`; }).join('') || '<div class="history-meta">暂无持仓数据</div>';
+      const base = Math.max(1, Math.abs(totalAsset));
+      const rows = [
+        { label: 'ETF', value: etf, color: '#6366f1' },
+        { label: '个股', value: stocks, color: '#f59e0b' },
+        { label: '现金净额', value: cash, color: '#10b981' }
+      ];
+      const structure = document.getElementById('risk-structure-list');
+      structure.innerHTML = rows.map(r => { const pct = r.value / base * 100; return `<div><div class="analysis-row"><span>${r.label}</span><strong class="font-num">${unit}${fmtNum(r.value)} · ${pct.toFixed(1)}%</strong></div><div class="analysis-track"><div class="analysis-fill" style="width:${Math.min(100,Math.max(0,pct))}%;background:${r.color}"></div></div></div>`; }).join('');
+      if (view === 'ALL') {
+        const currencyTotal = Math.max(1, m.globalTotalAssetCny);
+        structure.innerHTML += `<div class="analysis-row" style="padding-top:8px;border-top:1px solid #1f2937"><span>人民币账户净值占比</span><strong class="font-num">${(m.cnNetAssetCny/currencyTotal*100).toFixed(1)}%</strong></div><div class="analysis-row"><span>美元账户折合占比</span><strong class="font-num">${(m.usNetAssetCny/currencyTotal*100).toFixed(1)}%</strong></div>`;
+      } else {
+        structure.innerHTML += `<div class="history-meta" style="margin-top:4px">${view==='CN' ? '当前为人民币资产视角' : '当前为美元资产视角'}；跨市场总览可查看中美账户净值占比</div>`;
+      }
+    }
+
+    function getLocalDateKey(date = new Date()) {
+      const y = date.getFullYear(); const m = String(date.getMonth()+1).padStart(2,'0'); const d = String(date.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function recordNetWorthSnapshot() {
+      try {
+        const m = computePortfolioMetrics();
+        const history = JSON.parse(localStorage.getItem('gpm_v6_nav_history') || '[]');
+        const date = getLocalDateKey();
+        const point = { date, cn: m.cnNetAssetCny, us: m.usNetAssetUsd, global: m.globalTotalAssetCny, fx: m.fx };
+        const idx = history.findIndex(x => x.date === date);
+        if (idx >= 0) history[idx] = point; else history.push(point);
+        history.sort((a,b)=>a.date.localeCompare(b.date));
+        localStorage.setItem('gpm_v6_nav_history', JSON.stringify(history.slice(-730)));
+      } catch (e) { console.warn('保存资产快照失败:', e); }
+    }
+
+    function setHistoryRange(days) {
+      appState.prefs.historyRangeDays = days;
+      saveToLocal();
+      document.querySelectorAll('[data-history-range]').forEach(btn => btn.classList.toggle('active', Number(btn.dataset.historyRange) === days));
+      renderNetWorthHistory();
+    }
+
+    function renderNetWorthHistory() {
+      const canvas = document.getElementById('netWorthCanvas'); if (!canvas) return;
+      const { ctx, width, height } = setupHighDpiCanvas(canvas); ctx.clearRect(0,0,width,height);
+      let history = []; try { history = JSON.parse(localStorage.getItem('gpm_v6_nav_history') || '[]'); } catch(e) {}
+      const days = Number(appState.prefs.historyRangeDays ?? 30);
+      if (days > 0) { const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-days+1); const key = getLocalDateKey(cutoff); history = history.filter(p=>p.date >= key); }
+      const view = appState.prefs.activeView; const key = view === 'CN' ? 'cn' : (view === 'US' ? 'us' : 'global');
+      const unit = view === 'US' ? '$' : '¥';
+      const values = history.map(p=>Number(p[key])).filter(Number.isFinite);
+      document.getElementById('history-meta').textContent = history.length ? `共 ${history.length} 个日度快照 · ${history[0].date} 至 ${history[history.length-1].date} · 当前视图：${view==='CN'?'A股人民币':view==='US'?'美股美元':'跨市场人民币'}` : '暂无历史快照';
+      if (history.length < 2) { ctx.fillStyle='#9ca3af'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText('持续使用看板后，这里会逐步形成资产净值曲线', width/2, height/2); return; }
+      const left=54, right=12, top=14, bottom=28, plotW=width-left-right, plotH=height-top-bottom;
+      const min=Math.min(...values), max=Math.max(...values), span=(max-min)||Math.max(1,Math.abs(max)*0.02);
+      ctx.strokeStyle='rgba(107,114,128,.28)'; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='#9ca3af'; ctx.textAlign='right';
+      for(let i=0;i<4;i++){ const y=top+i*plotH/3; const v=max-i*span/3; ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(width-right,y);ctx.stroke();ctx.fillText(fmtNum(v,0),left-7,y+3); }
+      ctx.beginPath(); history.forEach((p,i)=>{ const x=left+(history.length===1?0:i/(history.length-1))*plotW; const y=top+(max-Number(p[key]))/span*plotH; if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y); }); ctx.strokeStyle='#818cf8';ctx.lineWidth=2.5;ctx.stroke();
+      const last=history[history.length-1]; const lx=width-right; const ly=top+(max-Number(last[key]))/span*plotH; ctx.fillStyle='#a5b4fc';ctx.beginPath();ctx.arc(lx,ly,4,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#9ca3af';ctx.textAlign='left';ctx.fillText(history[0].date.slice(5),left,height-8);ctx.textAlign='right';ctx.fillText(last.date.slice(5),width-right,height-8);
     }
 
     function renderCharts(m) {
@@ -2547,7 +2732,7 @@
       }
       if (appState.prefs.autoRefresh60s) {
         autoRefreshTimer = setInterval(() => {
-          refreshAllData(false);
+          if (!document.hidden) refreshAllData(false);
         }, 60000);
       }
     }
